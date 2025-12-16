@@ -1,0 +1,85 @@
+//final arduino code with 3 sensors -> it will convert the raw values - to ppm and send to python(in json format)-process by ml model- get prediction - send back to arduino - display on oled as normal/abnormal
+//python code used - integerate_model(secure_exit).python
+
+#include <Wire.h>
+#include <Adafruit_SSD1306.h>
+
+#define MQ135_PIN 34   // TMA
+#define MQ3_PIN   39   // Acetone
+#define NH3_PIN   36   // NH3
+
+Adafruit_SSD1306 display(128, 64, &Wire);
+
+// Convert ADC → PPM
+float adcToPPM(int adcValue, float scaleFactor) {
+  return (adcValue / 4095.0) * scaleFactor;
+}
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  analogReadResolution(12);
+  Wire.begin(21, 22);
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println("OLED INIT FAILED");
+    while (1);
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+  display.println("Breath Sensor Ready");
+  display.display();
+}
+
+void loop() {
+
+  // RAW READINGS
+  int raw_mq135 = analogRead(MQ135_PIN);
+  int raw_mq3   = analogRead(MQ3_PIN);
+  int raw_nh3   = analogRead(NH3_PIN);
+
+  // PPM
+  float nh3_ppm     = adcToPPM(raw_nh3,   3.5);
+  float acetone_ppm = adcToPPM(raw_mq3,   5.0);
+  float tma_ppm     = adcToPPM(raw_mq135, 1.2);
+
+  // SEND JSON
+  Serial.print("{\"NH3\":");
+  Serial.print(nh3_ppm, 4);
+  Serial.print(",\"Acetone\":");
+  Serial.print(acetone_ppm, 4);
+  Serial.print(",\"TMA\":");
+  Serial.print(tma_ppm, 4);
+  Serial.println("}");
+
+  // RECEIVE ML OUTPUT
+  String prediction = "Waiting";
+  if (Serial.available()) {
+    prediction = Serial.readStringUntil('\n');
+    prediction.trim();
+  }
+
+  // OLED DISPLAY
+  display.clearDisplay();
+  display.setCursor(0, 0);
+
+  display.print("NH3: ");
+  display.println(nh3_ppm, 3);
+
+  display.print("Acetone: ");
+  display.println(acetone_ppm, 3);
+
+  display.print("TMA: ");
+  display.println(tma_ppm, 3);
+
+  display.print("Status: ");
+  display.println(prediction);
+
+  display.display();
+
+  delay(300);
+}
